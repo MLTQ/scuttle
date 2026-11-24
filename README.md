@@ -48,7 +48,9 @@ On an RTX 4090 in its default **pure-PyTorch 4-bit packed + 4-bit embedding** mo
 | **Wikispeedia** (Masked topics) | 448 | 37.5% → **61.2%** (+23.7, $p{<}10^{-20}$) | 24.6% → **52.2%** (+27.7) | **121 / 280 (43.2%)** |
 | **Combined** | **1,049** | **48.5% → 62.6% (+14.1 pts)** | **31.1% → 47.3% (+16.2 pts)** | **210 / 540 (38.9%)** |
 
-### 3. Low-VRAM Quantization Sweep (BF16 Down to 2-Bit PTQ)
+### 3. Low-VRAM Quantization Sweep & Frontier Pareto (BF16 Down to 1-Bit PTQ)
+
+![Scuttle Quantization & Frontier Pareto](assets/scuttle_quant_frontier.png)
 
 | Precision | Static VRAM | Peak VRAM (100-link) | 60-Flag CTF Solved | Retention | Latency / Run | Page AUC / F1 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |

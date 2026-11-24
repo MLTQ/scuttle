@@ -124,7 +124,9 @@ On US Federal Law, Scuttle solves hard cross-referenced queries in **0.92 second
 
 ---
 
-## 6. Low-VRAM Quantization Sweep (BF16 Down to 2-Bit PTQ)
+## 6. Low-VRAM Quantization Sweep & Frontier Pareto (BF16 Down to 1-Bit PTQ)
+
+![Scuttle Quantization & Frontier Pareto](assets/scuttle_quant_frontier.png)
 
 Because local GPUs are often shared with larger reasoning LLMs, we evaluated Scuttle (`tie_word_embeddings=true`, 15 KB fp32 decision heads) across full **BF16**, `bitsandbytes` **8-bit / 4-bit NF4**, and genuine bit-packed pure-PyTorch quantization of **both** Linear weights and LFM3's 262M-parameter embedding table (which accounts for 524 MB in BF16—nearly 40% of a `bitsandbytes` 4-bit model!) down to **3-bit** and **2-bit HQQ** on the exact same 60-flag Zero-Index CTF suite and 300-sample O55 Page Head slice:
 
