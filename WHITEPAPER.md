@@ -98,15 +98,18 @@ We raced **Scuttle** head-to-head against three competing search methods on the 
 
 ### Track A: Zero-Index 60-Flag CTF Speed Run (20 LitSearch + 20 US Law + 20 Wiki, ≤16 Reads)
 
-| Competitor | Flags Captured | Solve Rate | Mean Reads (hit) | Latency / Run | **Seconds / Captured Flag** | LS / Law / Wiki |
-| --- | ---: | ---: | ---: | ---: | ---: | --- |
-| **Scuttle** *(100-link decision model)* | **45 / 60** | **75.0%** | 6.98 | **1.19 s** (`1,194 ms`) | **1.59 s / flag** | **15/20 · 17/20 · 13/20** |
-| **Qwen3-Reranker-0.6B** *(24-link neural)* | 22 / 60 | 36.7% | 7.27 | 0.65 s | 1.78 s / flag | 5/20 · 11/20 · 6/20 |
-| **LFM3-1.7B Generative Agent** *(same 1.7B weights, autoregressive)* | 10 / 60 | 16.7% | 4.10 | **8.43 s** (`8,427 ms`) | **50.56 s / flag** | 1/20 · 8/20 · 1/20 |
-| **BM25 Graph** *(CPU lexical)* | 25 / 60 | 41.7% | 6.60 | 0.017 s | 0.04 s / flag | 8/20 · 13/20 · 4/20 |
+| Competitor | Size / VRAM | Flags Captured | Solve Rate | Mean Reads (hit) | Latency / Run | **Seconds / Captured Flag** | LS / Law / Wiki |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| **Frontier Model** *(blind multi-turn cloud LLM)* | Cloud frontier | **58 / 60** | **96.7%** | **4.36** | 64.2 s *(36.5 s med)* | 66.5 s / flag | **19/20 · 19/20 · 20/20** |
+| **Scuttle 4-bit Packed (`default`)** | **1.7B / 0.93 GiB** | **46 / 60** | **76.7%** | 7.13 | **1.42 s** | **1.86 s / flag** | **16/20 · 17/20 · 13/20** |
+| **Scuttle BF16** *(100-link decision model)* | 1.7B / 3.22 GiB | 45 / 60 | 75.0% | 6.98 | **1.19 s** (`1,194 ms`) | **1.59 s / flag** | 15/20 · 17/20 · 13/20 |
+| **Qwen3-Reranker-0.6B** *(24-link neural)* | 0.6B / ~1.2 GiB | 22 / 60 | 36.7% | 7.27 | 0.65 s | 1.78 s / flag | 5/20 · 11/20 · 6/20 |
+| **LFM3-1.7B Generative Agent** *(same 1.7B weights)* | 1.7B / 3.22 GiB | 10 / 60 | 16.7% | 4.10 | **8.43 s** (`8,427 ms`) | **50.56 s / flag** | 1/20 · 8/20 · 1/20 |
+| **BM25 Graph** *(CPU lexical)* | 0B / CPU | 25 / 60 | 41.7% | 6.60 | 0.017 s | 0.04 s / flag | 8/20 · 13/20 · 4/20 |
 
+- **vs. Cloud Frontier Model (Cost/Latency Trade-Off):** Evaluating a strictly blind multi-turn frontier agent (zero file/web tools, seeing the exact same 100-link menus with full backtracking; 0 errors / 0 invalid picks) establishes the empirical ceiling at **96.7% (58/60)** in 4.36 reads, but at **64.2 s mean / 36.5 s median** per run (**46.3 s mean / 34.3 s median** on solved runs alone; the two 15-turn misses took 530 s and 638 s). Local **0.93 GiB Scuttle** recovers **~80% of frontier solve rate**—narrowing to **85% vs. 95% on US Federal Law** (`17/20` vs. `19/20`) and **80% vs. 95% on LitSearch** (`16/20` vs. `19/20`) where memorized Wikipedia trivia cannot shortcut masked topics—while running **45× faster mean / 26× faster median** (**35.7× faster per captured flag**) at **\$0 API cost**. On the exact same 100-item O55 Page Head test slice (`17 pos / 83 neg`), Scuttle achieves **`0.9575` AUC / `0.7879` F1** (same `0.765` Recall@0.5) vs. the frontier model's **`0.9894` AUC / `0.8667` F1** while running **35× faster (`114 ms` vs. `4,003 ms/item`)** and simultaneously scoring all 100 links per page.
 - **vs. Same 1.7B Model as a Generative Agent:** Scuttle is **7.1× faster per run**, captures **4.5× more flags** (`75.0%` vs. `16.7%`), and is **31.8× faster per captured flag** (`1.59 s` vs. `50.56 s`).
-- **vs. `Qwen3-Reranker-0.6B`:** Scuttle captures **2.05× more flags** (`75.0%` vs. `36.7%`; **3× more on LitSearch**) while running **11% faster per captured flag** even while evaluating **4× wider link menus (100 vs. 24)**.
+- **vs. `Qwen3-Reranker-0.6B`:** Scuttle captures **2.05–2.1× more flags** (`75.0–76.7%` vs. `36.7%`; **3× more on LitSearch**) while evaluating **4× wider link menus (100 vs. 24)**.
 
 ### Track B: Hard Hybrid CTF (75 Hard Flags Where BM25 Top-4 Missed, 25/Domain)
 
@@ -134,6 +137,7 @@ Because local GPUs are often shared with larger reasoning LLMs, we evaluated Scu
 | **3-bit HQQ (g64) + 4-bit Emb** *(PTQ cliff)* | 0.76 GiB | 1.53 GiB | 36 / 60 (60.0%) | 80.0% | 2,508 ms | 0.9439 | 0.7071 |
 | **Mixed 2-bit MLP + 4-bit Attn/Conv + 4-bit Emb** | 0.67 GiB | 1.48 GiB | 17 / 60 (28.3%) | 37.8% | 2,684 ms | 0.8421 | 0.0000 |
 | **2-bit HQQ (g32 / g64) + 4-bit Emb** | 0.68 / 0.60 GiB | 1.43 / 1.34 GiB | 7 / 6 of 60 | 15.6 / 13.3% | 2,866 / 2,225 ms | 0.5902 / 0.3122 | 0.0000 |
+| **1.58-bit Ternary / 1-bit Binary (g64)** | 0.49 / 0.41 GiB | 1.25 / 1.14 GiB | 6 / 5 of 60 | 13.3 / 11.1% | 3,342 / 2,800 ms | 0.4962 / 0.5466 | 0.0000 |
 
 **Key findings:**
 1. **Sub-1 GiB lossless sweet spot (`0.93 GiB` static / `1.70 GiB` peak, zero `bitsandbytes`):** Because Scuttle runs pure single-pass prefill GEMMs (zero autoregressive decoding), unpacking one 4-bit layer at a time in pure PyTorch adds negligible memory-bandwidth overhead—running **4.6% faster than BF16 (`1,423 ms` vs. `1,491 ms`)**, cutting static VRAM **3.5×** (`3.22 → 0.93 GiB`), shrinking the downloadable checkpoint to **973 MB** (`scuttle_int4.safetensors`, loading in **1.66 s**), and matching BF16 CTF accuracy (**46/60**, +1 boundary tie-break).

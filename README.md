@@ -26,15 +26,18 @@ On an RTX 4090 in its default **pure-PyTorch 4-bit packed + 4-bit embedding** mo
 
 ![Scuttle CTF Speed Run](assets/scuttle_ctf_speedrun.png)
 
-| Method | Flags Captured | Solve Rate | Latency / Run | **Seconds / Captured Flag** |
-| --- | ---: | ---: | ---: | ---: |
-| **Scuttle** *(100-link decision model)* | **45 / 60** | **75.0%** | **1.19 s** | **1.59 s / flag** |
-| `Qwen3-Reranker-0.6B` *(24-link neural)* | 22 / 60 | 36.7% | 0.65 s | 1.78 s / flag |
-| `LFM3-1.7B` Generative Agent *(same 1.7B weights)* | 10 / 60 | 16.7% | 8.43 s | 50.56 s / flag |
-| BM25 Graph *(CPU lexical)* | 25 / 60 | 41.7% | 0.02 s | 0.04 s / flag |
+| Method | Size / VRAM | Flags Captured | Solve Rate | Latency / Run | **Seconds / Captured Flag** | LS / Law / Wiki |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| **Frontier Model** *(blind multi-turn cloud LLM)* | Cloud frontier | 58 / 60 | 96.7% | 64.2 s *(36.5 s med)* | 66.5 s / flag | 19/20 · 19/20 · 20/20 |
+| **Scuttle 4-bit Packed (`default`)** | **1.7B / 0.93 GiB** | **46 / 60** | **76.7%** | **1.42 s** | **1.86 s / flag** | **16/20 · 17/20 · 13/20** |
+| **Scuttle BF16** | 1.7B / 3.22 GiB | 45 / 60 | 75.0% | **1.19 s** | **1.59 s / flag** | 15/20 · 17/20 · 13/20 |
+| `Qwen3-Reranker-0.6B` *(24-link neural)* | 0.6B / ~1.2 GiB | 22 / 60 | 36.7% | 0.65 s | 1.78 s / flag | 5/20 · 11/20 · 6/20 |
+| `LFM3-1.7B` Generative Agent *(same 1.7B weights)* | 1.7B / 3.22 GiB | 10 / 60 | 16.7% | 8.43 s | 50.56 s / flag | 1/20 · 8/20 · 1/20 |
+| BM25 Graph *(CPU lexical)* | 0B / CPU | 25 / 60 | 41.7% | 0.02 s | 0.04 s / flag | 8/20 · 13/20 · 4/20 |
 
+- **vs. Cloud Frontier Model:** At **0.93 GiB local VRAM and \$0 API cost**, Scuttle captures **~80% of a frontier model's solve rate** (**85% vs. 95% on US Federal Law**, **80% vs. 95% on LitSearch**, and **`0.9575` vs. `0.9894` Page AUC** on 100 O55 test items) while running **45× faster at the mean / 26× faster at the median** (**35.7× faster per captured flag**) and **35× faster on page scoring** (`114 ms` vs. `4,003 ms`). Scuttle is built to act as the 1.4-second local scout that feeds frontier agents over MCP instead of burning 40–60s of frontier context crawling links manually.
 - **vs. Same 1.7B Model as a Generative Agent:** **7.1× faster/run**, **4.5× more captures**, **31.8× faster per captured flag**.
-- **vs. `Qwen3-Reranker-0.6B`:** **2.05× more captures** while scoring 4× wider link menus (100 vs. 24 links).
+- **vs. `Qwen3-Reranker-0.6B`:** **2.1× more captures** while scoring 4× wider link menus (100 vs. 24 links).
 
 ### 2. Controlled With vs. Without Scuttle (1,049 Queries, Exact Same 16-Doc Budget)
 
@@ -56,6 +59,7 @@ On an RTX 4090 in its default **pure-PyTorch 4-bit packed + 4-bit embedding** mo
 | **3-bit HQQ (g64) + 4-bit Emb** *(PTQ cliff)* | 0.76 GiB | 1.53 GiB | 36 / 60 (60.0%) | 80.0% | 2,508 ms | 0.9439 / 0.7071 |
 | **Mixed 2-bit MLP + 4-bit Attn/Conv + 4-bit Emb** | 0.67 GiB | 1.48 GiB | 17 / 60 (28.3%) | 37.8% | 2,684 ms | 0.8421 / 0.0000 |
 | **2-bit HQQ (g32 / g64) + 4-bit Emb** | 0.68 / 0.60 GiB | 1.43 / 1.34 GiB | 7 / 6 of 60 | 15.6 / 13.3% | 2,866 / 2,225 ms | 0.59 / 0.31 / 0.00 |
+| **1.58-bit Ternary / 1-bit Binary (g64)** | 0.49 / 0.41 GiB | 1.25 / 1.14 GiB | 6 / 5 of 60 | 13.3 / 11.1% | 3,342 / 2,800 ms | 0.50 / 0.55 / 0.00 |
 
 > **Why `4bit` packed + 4-bit embeddings is the default:** `bitsandbytes` leaves LFM3's 128k-vocab embedding table in BF16 (524 MB). Packing both all Linear layers and the embedding table in pure PyTorch (`scuttle_int4.safetensors`, **973 MB**) cuts static VRAM by **3.5×** (**3.22 → 0.93 GiB**), runs **faster than BF16**, requires **zero `bitsandbytes` / C++ extensions**, and hits the exact lossless Pareto knee right before the 3-bit PTQ cliff. Paired with `--idle-offload 120`, idle VRAM is **0.0 GiB**.
 
