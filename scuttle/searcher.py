@@ -52,7 +52,7 @@ class CorpusBM25:
 class ScuttleSearcher:
     """Parallel swarm graph searcher backed by a calibrated single-pass Scuttle worker."""
 
-    def __init__(self, world, model=DEFAULT_MODEL_ID, device="auto", quant="none", weights=ABEL_W, worker=None):
+    def __init__(self, world, model=DEFAULT_MODEL_ID, device="auto", quant="4bit", weights=ABEL_W, worker=None):
         self.world = world
         self.weights = weights
         self.worker = worker or ScuttleWorker(model_id_or_path=model, device=device, quant=quant)

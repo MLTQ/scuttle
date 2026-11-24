@@ -1,4 +1,4 @@
-"""ScuttleWorker: Single-pass 1.7B decision model with BF16 / INT8 / 4-bit NF4 support and HF Hub auto-loading."""
+"""ScuttleWorker: Single-pass 1.7B decision model with 0.93 GiB packed 4-bit default & HF Hub auto-loading."""
 import os
 import re
 from pathlib import Path
@@ -6,8 +6,9 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 from huggingface_hub import hf_hub_download
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
+from scuttle.quant import INT4_FILENAME, load_packed_int4_backbone, pack_backbone_int4
 from scuttle.world import stable_hash
 
 DEFAULT_MODEL_ID = os.environ.get("SCUTTLE_MODEL", "Multiqueue/scuttle-1.7b")
@@ -87,26 +88,40 @@ class ValueHeads(nn.Module):
         self.link_head = nn.Linear(hidden_size, n_bins)
 
 
-def _resolve_heads_file(model_id_or_path):
+def _resolve_optional_file(model_id_or_path, filenames):
     p = Path(model_id_or_path)
     if p.exists():
-        for name in ("scuttle_heads.pt", "g4n_heads.pt"):
+        for name in filenames:
             if (p / name).exists():
                 return p / name
-        raise FileNotFoundError(f"No scuttle_heads.pt or g4n_heads.pt found in {p}")
-    for name in ("scuttle_heads.pt", "g4n_heads.pt"):
+        return None
+    for name in filenames:
         try:
             return Path(hf_hub_download(repo_id=str(model_id_or_path), filename=name))
         except Exception:
             continue
-    raise FileNotFoundError(f"Could not download scuttle_heads.pt from Hugging Face repo {model_id_or_path}")
+    return None
+
+
+def _resolve_heads_file(model_id_or_path):
+    res = _resolve_optional_file(model_id_or_path, ("scuttle_heads.pt", "g4n_heads.pt"))
+    if res is None:
+        raise FileNotFoundError(f"Could not find scuttle_heads.pt in {model_id_or_path}")
+    return res
 
 
 class ScuttleWorker:
-    """Single-pass Scuttle decision worker supporting BF16, 8-bit, 4-bit NF4, and CPU execution."""
+    """Single-pass Scuttle decision worker.
 
-    def __init__(self, model_id_or_path=DEFAULT_MODEL_ID, device="auto", quant="none"):
-        assert quant in ("none", "bf16", "8bit", "4bit"), f"Unsupported quant={quant}"
+    quant modes:
+      - "4bit" (default): Pure-PyTorch packed 4-bit Linear + 4-bit Embeddings (0.93 GiB static VRAM,
+        ~960 MB download via `scuttle_int4.safetensors`, zero bitsandbytes dependency, ~100% accuracy).
+      - "bf16" / "none": Full BF16 weights on CUDA (3.22 GiB static VRAM) or FP32 on CPU.
+      - "bnb4" / "8bit": Optional bitsandbytes NF4 / LLM.int8 quantization (requires bitsandbytes).
+    """
+
+    def __init__(self, model_id_or_path=DEFAULT_MODEL_ID, device="auto", quant="4bit"):
+        assert quant in ("4bit", "bf16", "none", "bnb4", "8bit"), f"Unsupported quant={quant}"
         if device == "auto":
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = device
@@ -118,9 +133,25 @@ class ScuttleWorker:
         self.tok = AutoTokenizer.from_pretrained(self.model_id, local_files_only=local, trust_remote_code=True)
         load_kw = dict(local_files_only=local, trust_remote_code=True)
 
-        if device == "cpu" or quant in ("none", "bf16"):
+        if quant == "4bit":
+            int4_path = _resolve_optional_file(self.model_id, (INT4_FILENAME,))
+            if int4_path is not None:
+                cfg = AutoConfig.from_pretrained(self.model_id, **load_kw)
+                self.backbone = load_packed_int4_backbone(cfg, int4_path, device=device)
+                hidden_size = cfg.hidden_size
+            else:
+                # Fallback: load BF16 checkpoint and pack in-place to 4-bit + 4-bit embeddings
+                dtype = torch.bfloat16 if device.startswith("cuda") else torch.float32
+                lm = AutoModelForCausalLM.from_pretrained(self.model_id, dtype=dtype, **load_kw).to(device)
+                hidden_size = lm.config.hidden_size
+                self.backbone = pack_backbone_int4(lm.model)
+                del lm
+        elif device == "cpu" or quant in ("none", "bf16"):
             dtype = torch.bfloat16 if device.startswith("cuda") else torch.float32
-            self.lm = AutoModelForCausalLM.from_pretrained(self.model_id, dtype=dtype, **load_kw).to(device)
+            lm = AutoModelForCausalLM.from_pretrained(self.model_id, dtype=dtype, **load_kw).to(device)
+            hidden_size = lm.config.hidden_size
+            self.backbone = lm.model
+            del lm
         else:
             from transformers import BitsAndBytesConfig
             if quant == "8bit":
@@ -133,15 +164,18 @@ class ScuttleWorker:
                     bnb_4bit_compute_dtype=torch.bfloat16,
                 )
             dev_idx = int(device.split(":")[1]) if ":" in device else 0
-            self.lm = AutoModelForCausalLM.from_pretrained(
+            lm = AutoModelForCausalLM.from_pretrained(
                 self.model_id, quantization_config=qcfg, device_map={"": dev_idx}, **load_kw
             )
+            hidden_size = lm.config.hidden_size
+            self.backbone = lm.model
+            del lm
 
-        self.lm.eval()
-        self.lm.config.use_cache = False
+        self.backbone.eval()
+        self.backbone.config.use_cache = False
 
         heads_path = _resolve_heads_file(self.model_id)
-        self.heads = ValueHeads(self.lm.config.hidden_size).to(device=self.device, dtype=torch.float32)
+        self.heads = ValueHeads(hidden_size).to(device=self.device, dtype=torch.float32)
         self.heads.load_state_dict(torch.load(heads_path, map_location=self.device, weights_only=True))
         self.heads.eval()
 
@@ -195,7 +229,7 @@ class ScuttleWorker:
 
         ctx = torch.autocast("cuda", dtype=torch.bfloat16) if self.device.startswith("cuda") else _nullctx()
         with ctx:
-            hidden = self.lm.model(
+            hidden = self.backbone(
                 input_ids=ids.to(self.device),
                 attention_mask=mask.to(self.device),
                 use_cache=False,

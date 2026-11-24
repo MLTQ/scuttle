@@ -14,7 +14,7 @@
 1. **$P(\text{page contributes} \mid q, \text{page})$** — a calibrated relevance probability (`0.949` AUC).
 2. **$P(d \le k \mid q, \text{link})$ for $k \in \{0,1,2,3,4,6\}$** across up to **100 links at once** — calibrated frontier priorities for a shared best-first parallel swarm.
 
-On an RTX 4090 in **4-bit NF4**, Scuttle uses just **1.70 GiB static VRAM** (**0.0 GiB idle** with `--idle-offload`), retains **100.0% of BF16 search accuracy**, and finishes a full multi-hop swarm search in **~1.2–1.6 seconds**.
+On an RTX 4090 in its default **pure-PyTorch 4-bit packed + 4-bit embedding** mode (zero `bitsandbytes` dependency!), Scuttle downloads just **973 MB**, uses **0.93 GiB static VRAM** (**1.70 GiB peak**, **0.0 GiB idle** with `--idle-offload`), retains **~100% of BF16 search accuracy**, and finishes a full multi-hop swarm search in **~1.4 seconds**.
 
 ---
 
@@ -45,15 +45,19 @@ On an RTX 4090 in **4-bit NF4**, Scuttle uses just **1.70 GiB static VRAM** (**0
 | **Wikispeedia** (Masked topics) | 448 | 37.5% → **61.2%** (+23.7, $p{<}10^{-20}$) | 24.6% → **52.2%** (+27.7) | **121 / 280 (43.2%)** |
 | **Combined** | **1,049** | **48.5% → 62.6% (+14.1 pts)** | **31.1% → 47.3% (+16.2 pts)** | **210 / 540 (38.9%)** |
 
-### 3. Low-VRAM Quantization (BF16 vs. 8-Bit vs. 4-Bit NF4)
+### 3. Low-VRAM Quantization Sweep (BF16 Down to 2-Bit PTQ)
 
 | Precision | Static VRAM | Peak VRAM (100-link) | 60-Flag CTF Solved | Retention | Latency / Run | Page AUC / F1 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **BF16** | 3.22 GiB | 3.99 GiB | 45 / 60 (75.0%) | 100.0% | 1,491 ms | 0.9546 / 0.7379 |
-| **8-bit** (`LLM.int8`) | 2.40 GiB | 3.89 GiB | 44 / 60 (73.3%) | 97.8% | 1,905 ms | 0.9565 / 0.7475 |
-| **4-bit NF4** *(recommended)* | **1.70 GiB** | **3.02 GiB** | **45 / 60 (75.0%)** | **100.0%** | **1,564 ms** (+4.9%) | **0.9534 / 0.7523** |
+| **BF16** (`model.safetensors`, 3.46 GB) | 3.22 GiB | 3.99 GiB | 45 / 60 (75.0%) | 100.0% | 1,491 ms | 0.9546 / 0.7379 |
+| **8-bit** (`bitsandbytes` LLM.int8) | 2.40 GiB | 3.89 GiB | 44 / 60 (73.3%) | 97.8% | 1,905 ms | 0.9565 / 0.7475 |
+| **4-bit NF4** (`bitsandbytes`, BF16 emb) | 1.70 GiB | 3.02 GiB | 45 / 60 (75.0%) | 100.0% | 1,564 ms | 0.9534 / 0.7523 |
+| **4-bit Packed + 4-bit Emb *(default, 973 MB)*** | **0.93 GiB** | **1.70 GiB** | **46 / 60 (76.7%)** | **~100%** *(102.2%)* | **1,423 ms** | **0.9545 / 0.7475** |
+| **3-bit HQQ (g64) + 4-bit Emb** *(PTQ cliff)* | 0.76 GiB | 1.53 GiB | 36 / 60 (60.0%) | 80.0% | 2,508 ms | 0.9439 / 0.7071 |
+| **Mixed 2-bit MLP + 4-bit Attn/Conv + 4-bit Emb** | 0.67 GiB | 1.48 GiB | 17 / 60 (28.3%) | 37.8% | 2,684 ms | 0.8421 / 0.0000 |
+| **2-bit HQQ (g32 / g64) + 4-bit Emb** | 0.68 / 0.60 GiB | 1.43 / 1.34 GiB | 7 / 6 of 60 | 15.6 / 13.3% | 2,866 / 2,225 ms | 0.59 / 0.31 / 0.00 |
 
-> **Recommendation:** Use `--quant 4bit` (plus `--idle-offload 120` for MCP). It cuts static VRAM nearly in half, runs faster than 8-bit, matches BF16 CTF accuracy 100%, and frees **100% of VRAM (`0.0 GiB`)** when idle.
+> **Why `4bit` packed + 4-bit embeddings is the default:** `bitsandbytes` leaves LFM3's 128k-vocab embedding table in BF16 (524 MB). Packing both all Linear layers and the embedding table in pure PyTorch (`scuttle_int4.safetensors`, **973 MB**) cuts static VRAM by **3.5×** (**3.22 → 0.93 GiB**), runs **faster than BF16**, requires **zero `bitsandbytes` / C++ extensions**, and hits the exact lossless Pareto knee right before the 3-bit PTQ cliff. Paired with `--idle-offload 120`, idle VRAM is **0.0 GiB**.
 
 Read the full technical report in **[WHITEPAPER.md](WHITEPAPER.md)**.
 
@@ -62,14 +66,11 @@ Read the full technical report in **[WHITEPAPER.md](WHITEPAPER.md)**.
 ## Installation
 
 ```bash
-# With 4-bit / 8-bit quantization support (recommended):
-pip install "scuttle-search[quant] @ git+https://github.com/MLTQ/scuttle.git"
-
-# Or BF16 / CPU only (no bitsandbytes):
+# Default install — includes 0.93 GiB pure-PyTorch 4-bit packed mode (no bitsandbytes needed!):
 pip install "scuttle-search @ git+https://github.com/MLTQ/scuttle.git"
 ```
 
-Weights auto-download on first run from Hugging Face: [`Multiqueue/scuttle-1.7b`](https://huggingface.co/Multiqueue/scuttle-1.7b).
+Pre-packed 4-bit weights (**973 MB**, `scuttle_int4.safetensors`) auto-download on first run from Hugging Face: [`Multiqueue/scuttle-1.7b`](https://huggingface.co/Multiqueue/scuttle-1.7b) (pass `--quant bf16` to fetch full 3.46 GB BF16 weights instead).
 
 ---
 
@@ -91,7 +92,6 @@ Or grab ready-to-run real-world graphs (**US Federal Law eCFR** + **Wikispeedia*
 scuttle search \
   --graph docs-graph.json.gz \
   --query "exemption from registration for private securities offerings to accredited investors" \
-  --quant 4bit \
   --budget 16
 ```
 
@@ -101,7 +101,7 @@ scuttle search \
 from scuttle import load_world, ScuttleSearcher
 
 world = load_world("ecfr-law-graph.json.gz")
-searcher = ScuttleSearcher(world, model="Multiqueue/scuttle-1.7b", quant="4bit")
+searcher = ScuttleSearcher(world)  # defaults to Multiqueue/scuttle-1.7b in 0.93 GiB packed 4-bit
 
 result = searcher.search(
     "exemption from registration for private securities offerings to accredited investors",
@@ -118,7 +118,7 @@ for hit in result["contributing"]:
 
 ## AI Agent Integration (MCP Server)
 
-`scuttle-mcp` is a zero-bloat JSON-RPC 2.0 stdio MCP server that keeps Scuttle warm for ~1s queries and automatically evicts VRAM when idle (`--idle-offload`).
+`scuttle-mcp` is a zero-bloat JSON-RPC 2.0 stdio MCP server that runs in **0.93 GiB static VRAM** by default and automatically evicts VRAM when idle (`--idle-offload`).
 
 Drop this into your MCP config (**Antigravity**, **Claude Code**, **Cursor**, **Codex**, etc.):
 
@@ -128,7 +128,6 @@ Drop this into your MCP config (**Antigravity**, **Claude Code**, **Cursor**, **
     "scuttle": {
       "command": "scuttle-mcp",
       "args": [
-        "--quant", "4bit",
         "--idle-offload", "120",
         "--graphs", "/path/to/your/graphs"
       ]

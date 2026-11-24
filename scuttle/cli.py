@@ -52,7 +52,8 @@ def main():
     s.add_argument("--query", required=True)
     s.add_argument("--model", default=DEFAULT_MODEL_ID, help="HF repo ID or local checkpoint dir")
     s.add_argument("--device", default="auto", help="auto|cuda|cuda:0|cpu")
-    s.add_argument("--quant", choices=["none", "bf16", "8bit", "4bit"], default="none")
+    s.add_argument("--quant", choices=["4bit", "bf16", "none", "bnb4", "8bit"], default="4bit",
+                   help="4bit (default: 0.93 GiB pure-PyTorch packed + 4-bit emb) | bf16 | bnb4 | 8bit")
     s.add_argument("--start-ids", help="Comma-separated starting doc IDs (omit for BM25 auto-seeding)")
     s.add_argument("--seeds", type=int, default=4)
     s.add_argument("--budget", type=int, default=16)

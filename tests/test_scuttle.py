@@ -11,6 +11,7 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scuttle.indexer import index_directory
 from scuttle.model import ABEL_W, THRESHOLDS, frontier_value
+from scuttle.quant import PackedInt4Embedding, PackedInt4Linear
 from scuttle.searcher import CorpusBM25
 from scuttle.world import World, load_world
 
@@ -73,6 +74,27 @@ class TestScuttle(unittest.TestCase):
         tool_names = [t["name"] for t in lines[1]["result"]["tools"]]
         self.assertIn("scuttle_search", tool_names)
         self.assertIn("scuttle_index_directory", tool_names)
+
+    def test_packed_int4_linear_and_embedding(self):
+        torch.manual_seed(0)
+        lin = torch.nn.Linear(128, 64, bias=False)
+        qlin = PackedInt4Linear.from_linear(lin, group_size=64)
+        self.assertEqual(qlin.qdata.dtype, torch.uint8)
+        self.assertEqual(qlin.qdata.numel(), 128 * 64 // 2)
+        x = torch.randn(3, 128)
+        y_ref = lin(x)
+        y_q = qlin(x)
+        cos = torch.nn.functional.cosine_similarity(y_ref.flatten(), y_q.flatten(), dim=0).item()
+        self.assertGreater(cos, 0.995)
+
+        emb = torch.nn.Embedding(32, 128)
+        qemb = PackedInt4Embedding.from_embedding(emb, group_size=64)
+        self.assertEqual(qemb.qdata.shape, (32, 64))
+        ids = torch.tensor([[0, 5, 17]])
+        e_ref = emb(ids)
+        e_q = qemb(ids)
+        cos_e = torch.nn.functional.cosine_similarity(e_ref.flatten(), e_q.flatten(), dim=0).item()
+        self.assertGreater(cos_e, 0.995)
 
 
 if __name__ == "__main__":

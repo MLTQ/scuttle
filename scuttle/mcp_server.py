@@ -1,15 +1,15 @@
 """Zero-bloat JSON-RPC 2.0 stdio MCP server for Scuttle (`scuttle-mcp`).
 
-Keeps Scuttle warm for sub-second agent searches, supports 4-bit NF4 quantization
-(1.70 GiB static VRAM with 100% CTF solve retention!) and optional `--idle-offload`
-(evicts weights after N idle seconds so idle VRAM = 0.0 GiB).
+Defaults to pure-PyTorch packed 4-bit + 4-bit embeddings (0.93 GiB static VRAM, ~100% BF16 accuracy,
+zero bitsandbytes dependency!) and supports `--idle-offload` (evicts weights after N idle seconds
+so idle VRAM = 0.0 GiB).
 
 Example MCP config (Antigravity / Claude Code / Cursor / Codex):
 {
   "mcpServers": {
     "scuttle": {
       "command": "scuttle-mcp",
-      "args": ["--quant", "4bit", "--idle-offload", "120", "--graphs", "/path/to/graphs"]
+      "args": ["--idle-offload", "120", "--graphs", "/path/to/graphs"]
     }
   }
 }
@@ -76,7 +76,7 @@ TOOLS = [
 
 
 class ScuttleEngine:
-    def __init__(self, model=DEFAULT_MODEL_ID, device="auto", quant="none", graph_dir=None, idle_offload=0):
+    def __init__(self, model=DEFAULT_MODEL_ID, device="auto", quant="4bit", graph_dir=None, idle_offload=0):
         self.model = model
         self.device = device
         self.quant = quant
@@ -170,7 +170,8 @@ def main():
     ap = argparse.ArgumentParser(prog="scuttle-mcp", description="Scuttle stdio MCP server for AI agents")
     ap.add_argument("--model", default=DEFAULT_MODEL_ID)
     ap.add_argument("--device", default="auto")
-    ap.add_argument("--quant", choices=["none", "bf16", "8bit", "4bit"], default="none")
+    ap.add_argument("--quant", choices=["4bit", "bf16", "none", "bnb4", "8bit"], default="4bit",
+                    help="4bit (default: 0.93 GiB pure-PyTorch packed) | bf16 | bnb4 | 8bit")
     ap.add_argument("--graphs", default=os.environ.get("SCUTTLE_GRAPHS"), help="Optional directory of .json.gz graphs")
     ap.add_argument("--idle-offload", type=int, default=0, help="Seconds idle before unloading model from VRAM (0=keep warm)")
     a = ap.parse_args()

@@ -121,17 +121,23 @@ On US Federal Law, Scuttle solves hard cross-referenced queries in **0.92 second
 
 ---
 
-## 6. Low-VRAM Quantization Benchmark (BF16 vs. 8-Bit vs. 4-Bit NF4)
+## 6. Low-VRAM Quantization Sweep (BF16 Down to 2-Bit PTQ)
 
-Because local GPUs are often shared with larger reasoning LLMs, we evaluated Scuttle (`tie_word_embeddings=true`, 15 KB fp32 decision heads) across full **BF16**, **8-bit (`bitsandbytes` LLM.int8)**, and **4-bit NF4 double-quantization (`bnb_4bit_compute_dtype=bf16`)** on the exact same 60-flag Zero-Index CTF suite and 300-example O55 Page Head test slice:
+Because local GPUs are often shared with larger reasoning LLMs, we evaluated Scuttle (`tie_word_embeddings=true`, 15 KB fp32 decision heads) across full **BF16**, `bitsandbytes` **8-bit / 4-bit NF4**, and genuine bit-packed pure-PyTorch quantization of **both** Linear weights and LFM3's 262M-parameter embedding table (which accounts for 524 MB in BF16—nearly 40% of a `bitsandbytes` 4-bit model!) down to **3-bit** and **2-bit HQQ** on the exact same 60-flag Zero-Index CTF suite and 300-sample O55 Page Head slice:
 
 | Precision | Static VRAM | Peak VRAM (100-link) | 60-Flag CTF Solved | Solve Retention | Mean Latency / Run | Page Head AUC (300) | Page Head F1 (300) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **BF16** (reference) | 3.22 GiB | 3.99 GiB | 45 / 60 (75.0%) | 100.0% | 1,491 ms | 0.9546 | 0.7379 |
-| **8-bit** (`LLM.int8`) | 2.40 GiB | 3.89 GiB | 44 / 60 (73.3%) | 97.8% | 1,905 ms | **0.9565** | 0.7475 |
-| **4-bit NF4** *(double-quant)* | **1.70 GiB** | **3.02 GiB** | **45 / 60 (75.0%)** | **100.0%** | **1,564 ms** (+4.9%) | 0.9534 | **0.7523** |
+| **BF16** (reference, 3.46 GB) | 3.22 GiB | 3.99 GiB | 45 / 60 (75.0%) | 100.0% | 1,491 ms | 0.9546 | 0.7379 |
+| **8-bit** (`bitsandbytes` LLM.int8) | 2.40 GiB | 3.89 GiB | 44 / 60 (73.3%) | 97.8% | 1,905 ms | **0.9565** | 0.7475 |
+| **4-bit NF4** (`bitsandbytes`, BF16 emb) | 1.70 GiB | 3.02 GiB | 45 / 60 (75.0%) | 100.0% | 1,564 ms (+4.9%) | 0.9534 | **0.7523** |
+| **4-bit Packed + 4-bit Emb (`default`, 973 MB)** | **0.93 GiB** | **1.70 GiB** | **46 / 60 (76.7%)** | **~100%** *(102.2%)* | **1,423 ms** (−4.6%) | 0.9545 | 0.7475 |
+| **3-bit HQQ (g64) + 4-bit Emb** *(PTQ cliff)* | 0.76 GiB | 1.53 GiB | 36 / 60 (60.0%) | 80.0% | 2,508 ms | 0.9439 | 0.7071 |
+| **Mixed 2-bit MLP + 4-bit Attn/Conv + 4-bit Emb** | 0.67 GiB | 1.48 GiB | 17 / 60 (28.3%) | 37.8% | 2,684 ms | 0.8421 | 0.0000 |
+| **2-bit HQQ (g32 / g64) + 4-bit Emb** | 0.68 / 0.60 GiB | 1.43 / 1.34 GiB | 7 / 6 of 60 | 15.6 / 13.3% | 2,866 / 2,225 ms | 0.5902 / 0.3122 | 0.0000 |
 
-**Key finding:** **4-bit NF4 double-quantization is strictly superior to 8-bit** on every practical axis—cutting static VRAM nearly in half (**3.22 → 1.70 GiB**, −47%), retaining **100.0% of BF16 CTF solve rate** (`45/60`, LS 15/20 · Law 16/20 · Wiki 14/20), matching Page AUC (`0.9534`) with slightly higher F1 (`0.7523`), and running within **4.9%** of BF16 latency (`1,564 ms` vs. `1,491 ms`, faster than 8-bit's `1,905 ms`). Paired with `scuttle-mcp --quant 4bit --idle-offload 120`, Scuttle consumes **1.70 GiB static VRAM** during active swarm bursts and **0.0 GiB VRAM** while idle.
+**Key findings:**
+1. **Sub-1 GiB lossless sweet spot (`0.93 GiB` static / `1.70 GiB` peak, zero `bitsandbytes`):** Because Scuttle runs pure single-pass prefill GEMMs (zero autoregressive decoding), unpacking one 4-bit layer at a time in pure PyTorch adds negligible memory-bandwidth overhead—running **4.6% faster than BF16 (`1,423 ms` vs. `1,491 ms`)**, cutting static VRAM **3.5×** (`3.22 → 0.93 GiB`), shrinking the downloadable checkpoint to **973 MB** (`scuttle_int4.safetensors`, loading in **1.66 s**), and matching BF16 CTF accuracy (**46/60**, +1 boundary tie-break).
+2. **Sharp PTQ cliff below 4 bits:** Without quantization-aware retraining, 3-bit HQQ saves only `170 MB` (`0.93 → 0.76 GiB`) while losing 15–17 percentage points of CTF accuracy (`60.0%`), and 2-bit collapses to `10–28%` with shifted `page_head` calibration (`F1 = 0.0000`). **4-bit packed + 4-bit embeddings** is therefore the exact lossless Pareto knee and Scuttle's default mode of operation. Paired with `scuttle-mcp --idle-offload 120`, Scuttle consumes **0.93 GiB static VRAM** during active swarm bursts and **0.0 GiB VRAM** while idle.
 
 ---
 
