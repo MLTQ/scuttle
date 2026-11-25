@@ -6,12 +6,13 @@ import time
 from scuttle.indexer import index_directory
 from scuttle.model import DEFAULT_MODEL_ID
 from scuttle.searcher import ScuttleSearcher
+from scuttle.sources import load_or_build_source
 from scuttle.world import load_world
 
 
 def cmd_search(a):
     t0 = time.perf_counter()
-    world = load_world(a.graph, max_links=a.max_links)
+    world, src_info = load_or_build_source(a.graph, cache_dir="~/.cache/scuttle/graphs", max_links=a.max_links)
     searcher = ScuttleSearcher(world, model=a.model, device=a.device, quant=a.quant)
     starts = [x.strip() for x in a.start_ids.split(",") if x.strip()] if a.start_ids else None
     t_s = time.perf_counter()

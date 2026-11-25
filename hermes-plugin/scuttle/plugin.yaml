@@ -1,0 +1,97 @@
+name: scuttle
+label: Scuttle
+version: 0.3.0
+description: >
+  Fast local parallel swarm search over a user's own Markdown/Obsidian piles,
+  messy dataswamps (PDFs, HTML, code, JSONL/CSV, image stubs), read-only SQLite
+  databases (with foreign-key graphs), or prebuilt citation/law graphs. Backed
+  by the 0.93 GiB 4-bit Scuttle-1.7B single-pass decision model (~1.4s/search)
+  with automatic idle VRAM offload (0.0 GiB idle) and zero external API keys.
+author: MLTQ
+license: MIT
+homepage: https://github.com/MLTQ/scuttle
+tags:
+  - search
+  - retrieval
+  - swarm
+  - obsidian
+  - markdown
+  - sqlite
+  - dataswamp
+  - local-ai
+provides_tools:
+  - scuttle_search
+  - scuttle_index
+  - scuttle_score
+  - scuttle_status
+requires_env: []
+optional_env:
+  - name: SCUTTLE_URL
+    description: "Base URL of the resident scuttle-serve daemon (default http://127.0.0.1:8091)."
+    prompt: Scuttle daemon URL
+    password: false
+  - name: SCUTTLE_MODEL
+    description: "Hugging Face repo ID or local checkpoint dir (default Multiqueue/scuttle-1.7b)."
+    prompt: Scuttle model ID or path
+    password: false
+  - name: SCUTTLE_QUANT
+    description: "Quantization mode: 4bit (0.93 GiB default), bf16, bnb4, 8bit."
+    prompt: Scuttle quantization mode
+    password: false
+  - name: SCUTTLE_DEVICE
+    description: "Device for scuttle-serve: auto, cuda, cuda:0, or cpu (default auto)."
+    prompt: Scuttle device
+    password: false
+  - name: SCUTTLE_GRAPHS
+    description: "Optional directory of prebuilt .json.gz graphs addressable by short name."
+    prompt: Prebuilt graphs directory
+    password: false
+  - name: SCUTTLE_PYTHON
+    description: "Optional explicit Python executable with scuttle-search installed."
+    prompt: Python executable for scuttle-serve
+    password: false
+config_schema:
+  url:
+    type: str
+    default: "http://127.0.0.1:8091"
+    description: Base URL of the resident scuttle-serve daemon.
+  model_id:
+    type: str
+    default: "Multiqueue/scuttle-1.7b"
+    description: Hugging Face repo ID or local Scuttle checkpoint directory.
+  quant:
+    type: str
+    default: "4bit"
+    description: Quantization mode (4bit = 0.93 GiB pure-PyTorch default, bf16, bnb4, 8bit).
+  device:
+    type: str
+    default: "auto"
+    description: Device for the autostarted daemon (auto, cuda, cuda:0, cpu).
+  idle_offload:
+    type: int
+    default: 120
+    description: Seconds idle before unloading model weights from GPU (0.0 GiB idle VRAM).
+  graphs_dir:
+    type: str
+    default: ""
+    description: Optional folder of named .json.gz graphs (e.g. scuttle-demos/graphs).
+  cache_dir:
+    type: str
+    default: "~/.cache/scuttle"
+    description: Disk cache directory for auto-indexed dataswamps and SQLite databases.
+  python:
+    type: str
+    default: ""
+    description: Optional explicit Python path containing scuttle-search (else uses scuttle-serve on PATH).
+  autostart:
+    type: bool
+    default: true
+    description: Autostart and reuse a resident scuttle-serve daemon when none is running.
+  startup_timeout:
+    type: float
+    default: 60.0
+    description: Seconds to wait for an autostarted scuttle-serve daemon to become healthy.
+  request_timeout:
+    type: float
+    default: 300.0
+    description: Seconds to wait for an indexing or search request.

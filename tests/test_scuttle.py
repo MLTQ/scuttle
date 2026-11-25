@@ -96,6 +96,62 @@ class TestScuttle(unittest.TestCase):
         cos_e = torch.nn.functional.cosine_similarity(e_ref.flatten(), e_q.flatten(), dim=0).item()
         self.assertGreater(cos_e, 0.995)
 
+    def test_dataswamp_and_sqlite_indexers(self):
+        import sqlite3
+        from scuttle.sources import index_dataswamp, index_sqlite, load_or_build_source
+
+        with tempfile.TemporaryDirectory() as td:
+            # 1. Mixed dataswamp: markdown with frontmatter + python code import + image stub + unlinked txt
+            swamp = Path(td) / "swamp"
+            swamp.mkdir()
+            (swamp / "notes.md").write_text(
+                "---\ntitle: Auth Overview\naliases:\n  - AuthDoc\n---\n"
+                "Covers JWT rotation. See [[diagram.png]] and [Tokens](tokens.txt).\n"
+            )
+            (swamp / "tokens.txt").write_text("Ed25519 signing keys rotate via JWKS dual-key window.")
+            (swamp / "orphan.txt").write_text("JWKS dual-key rotation prevents dropped Ed25519 sessions.")
+            (swamp / "diagram.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+            (swamp / "auth.py").write_text("import utils\ndef verify_jwt(): return True\n")
+            (swamp / "utils.py").write_text("def parse_jwks(): return {}\n")
+
+            graph, info = index_dataswamp(swamp, bridge_k=4)
+            self.assertEqual(info["documents"], 6)
+            self.assertGreaterEqual(info["explicit_edges"], 3)  # wikilink img + mdlink txt + py import
+            self.assertEqual(graph["papers"]["diagram.png"]["kind"], "image")
+
+            # 2. Read-only SQLite database with explicit foreign key + heuristic *_id
+            db_path = Path(td) / "vault.sqlite"
+            conn = sqlite3.connect(db_path)
+            conn.executescript(
+                """
+                CREATE TABLE projects (id INTEGER PRIMARY KEY, name TEXT, summary TEXT);
+                CREATE TABLE notes (
+                    id INTEGER PRIMARY KEY,
+                    project_id INTEGER REFERENCES projects(id),
+                    title TEXT,
+                    body TEXT
+                );
+                INSERT INTO projects VALUES (1, 'Apollo', 'Distributed consensus engine written in Rust');
+                INSERT INTO notes VALUES (10, 1, 'Raft Election Bug', 'Fixed split-vote timeout on leader election');
+                INSERT INTO notes VALUES (11, 1, 'WAL Compaction', 'Snapshotting cuts recovery latency by 4x');
+                """
+            )
+            conn.commit()
+            conn.close()
+
+            g_db, db_info = index_sqlite(db_path, bridge_k=2)
+            self.assertEqual(db_info["documents"], 3)
+            self.assertGreaterEqual(db_info["explicit_edges"], 2)  # notes:10 -> projects:1, notes:11 -> projects:1
+            self.assertIn("projects:1", [dst for dst, _ in g_db["out"]["notes:10"]])
+
+            # 3. Cache hit check via load_or_build_source
+            cache_dir = Path(td) / "cache"
+            w1, i1 = load_or_build_source(str(db_path), cache_dir=cache_dir)
+            self.assertFalse(i1["cached"])
+            w2, i2 = load_or_build_source(str(db_path), cache_dir=cache_dir)
+            self.assertTrue(i2["cached"])
+            self.assertEqual(len(w1.papers), len(w2.papers))
+
 
 if __name__ == "__main__":
     unittest.main()

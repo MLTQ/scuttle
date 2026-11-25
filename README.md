@@ -149,6 +149,33 @@ Drop this into your MCP config (**Antigravity**, **Claude Code**, **Cursor**, **
 
 ---
 
+## Hermes Agent Plugin (Markdown Piles, Dataswamps & SQLite DBs)
+
+Scuttle ships with a native **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** plugin in [`hermes-plugin/scuttle/`](hermes-plugin/scuttle/) that runs zero-`torch` inside Hermes and talks over localhost HTTP to a resident `scuttle-serve` daemon (**0.93 GiB active VRAM**, **0.0 GiB idle** after 120s).
+
+It can search **any local user source out of the box** (auto-indexed and cached by file/WAL mtime):
+- **Markdown / Obsidian vaults** (`[[wikilinks]]`, `[md](links)`, frontmatter `title`/`aliases`/`tags`, image embeds)
+- **Messy dataswamps** (PDFs via `pdftotext`/`pypdf`, HTML, code files with `import`/`#include` edges, JSONL/CSV, image stubs carrying exact paths for follow-up vision, plus capped lexical bridges for unlinked files)
+- **Read-only SQLite databases** (`/path/to/app.db` or `sqlite:///path/to/app.db#table1,table2`, opened strictly `mode=ro` with foreign-key + `*_id` graph extraction)
+- **Prebuilt `.json.gz` graphs** (or named graphs in `graphs_dir`)
+
+### Install in Hermes
+
+```bash
+# 1. Install the Scuttle runtime (provides `scuttle-serve`)
+pip install "scuttle-search @ git+https://github.com/MLTQ/scuttle.git"
+
+# 2. Link or copy the plugin into ~/.hermes/plugins/scuttle and enable it
+git clone https://github.com/MLTQ/scuttle.git
+ln -s "$(pwd)/scuttle/hermes-plugin/scuttle" ~/.hermes/plugins/scuttle
+hermes plugins enable scuttle
+hermes plugins doctor ~/.hermes/plugins/scuttle
+```
+
+**Registered Hermes tools (`toolset="scuttle"`):** `scuttle_search`, `scuttle_index`, `scuttle_score`, `scuttle_status`, plus the bundled `scuttle-search` skill.
+
+---
+
 ## Custom Graph Schema (`graph.json.gz`)
 
 Any corpus can be searched by Scuttle if exported to this minimal JSON (or gzipped JSON) format:
